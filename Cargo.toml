@@ -1,0 +1,77 @@
+[workspace] 
+resolver = "2"
+members = [ 
+    "analyzer-a", 
+    "analyzer-b",
+    "combiner"
+]
+
+[patch.crates-io]
+# embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "3cd0a54e0e3e7dd4b480034106b8b24144d2385b" }
+# embassy-usb = { git = "https://github.com/embassy-rs/embassy", rev = "3cd0a54e0e3e7dd4b480034106b8b24144d2385b" }
+# embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "3cd0a54e0e3e7dd4b480034106b8b24144d2385b" }
+# embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "3cd0a54e0e3e7dd4b480034106b8b24144d2385b" }
+# embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "3cd0a54e0e3e7dd4b480034106b8b24144d2385b" }
+# embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "3cd0a54e0e3e7dd4b480034106b8b24144d2385b" }
+# embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "3cd0a54e0e3e7dd4b480034106b8b24144d2385b" }
+# cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "3cd0a54e0e3e7dd4b480034106b8b24144d2385b" }
+# erdnuss-comms = { path = "../erdnuss-pub"}
+
+
+# [package]
+# name = "mtbus"
+# version = "0.1.0"
+# edition = "2021"
+
+
+# cargo build/run
+[profile.dev]
+codegen-units = 1
+debug = 2
+debug-assertions = true
+incremental = false
+opt-level = 0
+overflow-checks = false
+
+# cargo build/run --release
+[profile.release]
+codegen-units = 1
+debug = 2
+debug-assertions = false
+incremental = false
+lto = 'off'
+opt-level = 0
+overflow-checks = false
+
+# do not optimize proc-macro crates = faster builds from scratch
+[profile.dev.build-override]
+codegen-units = 8
+debug = false
+debug-assertions = false
+opt-level = 0
+overflow-checks = false
+
+[profile.release.build-override]
+codegen-units = 8
+debug = false
+debug-assertions = false
+opt-level = 0
+overflow-checks = false
+
+# cargo test
+[profile.test]
+codegen-units = 1
+debug = 2
+debug-assertions = true
+incremental = false
+opt-level = 's'
+overflow-checks = true
+
+# cargo test --release
+[profile.bench]
+codegen-units = 1
+debug = 2
+debug-assertions = false
+incremental = false
+lto = 'off'
+opt-level = 's'
