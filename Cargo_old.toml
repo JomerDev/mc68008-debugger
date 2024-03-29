@@ -2,8 +2,9 @@
 resolver = "2"
 members = [ 
     "analyzer-a", 
-    "analyzer-b",
-    "combiner"
+    # "analyzer-b",
+    "analyzer-d",
+    # "combiner"
 ]
 
 [patch.crates-io]
