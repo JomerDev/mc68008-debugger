@@ -104,7 +104,7 @@ fn main() {
     let mut port = SerialPort::builder()
         .baud_rate(921_600)
         .read_timeout(None)
-        .open("COM8")
+        .open("COM5")
         .expect("Failed to open port");
 
     let mut serial_buf: [u8; 8] = [0; 8];

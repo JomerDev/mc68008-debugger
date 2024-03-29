@@ -5,7 +5,7 @@ use assign_resources::assign_resources;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
 use embassy_futures::select::{select, Either};
-use embassy_rp::gpio::{Input, Pull};
+use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::peripherals::USB;
 use embassy_rp::pio::{
     Config as PioConfig, FifoJoin, InterruptHandler as InterruptHandlerPio, Pio, ShiftDirection,
@@ -86,43 +86,10 @@ async fn pio_task(res: PioResources) {
     let Pio {
         mut common,
         sm0: mut sm,
+        mut sm1,
         ..
     } = Pio::new(pio, Irqs);
 
-    let prg = pio_proc::pio_asm!(
-        "set pins 0",
-        "nop",
-        "nop"
-        "nop",
-        "nop",
-        "nop",
-        "set pins 3",
-        ".wrap_target",
-        "wait 1 gpio 0  ; Wait for analyzer-b to be ready",
-        "set pins 2     ; Unset HALT"
-        "wait 1 gpio 26 ; Wait for AS to be negated"
-        "wait 0 gpio 26 ; Wait for AS",
-        "set pins, 3    ; Set HALT"
-        "in pins, 22    ; Read address + IPL1 + IPL0",
-        "in null, 10    ; Fill up the rest with zero",
-        "push block     ; Push data and wait for it to be accepted"
-        ".wrap",
-    );
-
-    let mut config = PioConfig::default();
-    config.use_program(&common.load_program(&prg.program), &[]);
-    config.clock_divider = (U56F8!(125_000_000) / U56F8!(16_000)).to_fixed();
-    config.shift_in = ShiftConfig {
-        auto_fill: false,
-        threshold: 32,
-        direction: ShiftDirection::Left,
-    };
-    config.shift_out = ShiftConfig {
-        auto_fill: false,
-        threshold: 32,
-        direction: ShiftDirection::Right,
-    };
-    config.out_sticky = true;
     let pin0 = common.make_pio_pin(res.pin0);
     let pin1 = common.make_pio_pin(res.pin1);
     let pin2 = common.make_pio_pin(res.pin2);
@@ -149,6 +116,42 @@ async fn pio_task(res: PioResources) {
     let pin26 = common.make_pio_pin(res.pin26);
     let pin27 = common.make_pio_pin(res.pin27);
     let pin28 = common.make_pio_pin(res.pin28);
+
+    let prg = pio_proc::pio_asm!(
+        ".side_set 2 opt"
+        // "set pins 0",
+        "loop:",
+        "nop side 0b10"
+        "jmp loop side 0b10",
+        "nop",
+        "nop",
+        "set pins 3",
+        ".wrap_target",
+        "wait 1 gpio 0  ; Wait for analyzer-b to be ready",
+        "set pins 2     ; Unset HALT"
+        "wait 1 gpio 26 ; Wait for AS to be negated"
+        "wait 0 gpio 26 ; Wait for AS",
+        "set pins, 3    ; Set HALT"
+        "in pins, 22    ; Read address + IPL1 + IPL0",
+        "in null, 10    ; Fill up the rest with zero",
+        "push block     ; Push data and wait for it to be accepted"
+        ".wrap",
+    );
+
+    let mut config = PioConfig::default();
+    config.use_program(&common.load_program(&prg.program), &[&pin27, &pin28]);
+    config.clock_divider = (U56F8!(125_000_000) / U56F8!(16_000)).to_fixed();
+    config.shift_in = ShiftConfig {
+        auto_fill: false,
+        threshold: 32,
+        direction: ShiftDirection::Left,
+    };
+    config.shift_out = ShiftConfig {
+        auto_fill: false,
+        threshold: 32,
+        direction: ShiftDirection::Right,
+    };
+    config.out_sticky = true;
     sm.set_pin_dirs(Direction::Out, &[&pin27, &pin28]);
     sm.set_pin_dirs(
         Direction::In,
@@ -168,10 +171,35 @@ async fn pio_task(res: PioResources) {
     sm.set_config(&config);
     sm.set_enable(false);
 
+
+    let prg2 = pio_proc::pio_asm!(
+        r#"
+            .side_set 2
+
+            loop:
+                nop         side 0b00
+                jmp loop    side 0b00
+        "#
+    );
+
+    let mut config2 = PioConfig::default();
+    config2.use_program(&common.load_program(&prg2.program), &[&pin27, &pin28]);
+    config2.clock_divider = (U56F8!(125_000_000) / U56F8!(16_000)).to_fixed();
+    
+    sm1.set_pin_dirs(Direction::Out, &[&pin27, &pin28]);
+    config2.set_set_pins(&[&pin27, &pin28]);
+    // config2.
+    // config2.out_sticky = true;
+
+    sm1.set_config(&config2);
+    sm1.set_enable(true);
+
+
     let button = Input::new(res.pin24, Pull::Up);
 
     let mut count: u32 = 0;
     let mut was_pressed = false;
+    let mut is_enabled = false;
 
     let mut dma_in_ref = res.dma.into_ref();
     let mut din = [0u32; 1];
@@ -191,12 +219,12 @@ async fn pio_task(res: PioResources) {
             
             if button.is_low() && !was_pressed {
                 was_pressed = true;
-                sm.set_enable(false);
-                defmt::info!("Disabled sm");
+                is_enabled = !is_enabled;
+                sm.set_enable(is_enabled);
+                sm1.set_enable(!is_enabled);
+                defmt::info!("sm {}", is_enabled);
             } else if button.is_high() && was_pressed {
                 was_pressed = false;
-                sm.set_enable(true);
-                defmt::info!("Enabled sm");
             }
         }
     };
