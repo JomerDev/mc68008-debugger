@@ -1,6 +1,7 @@
-use std::fmt::Display;
+use std::{fmt::Display, io::Read, time::Duration};
 
 use packed_struct::prelude::*;
+use serialport5::SerialPort;
 
 #[derive(PrimitiveEnum_u8, Debug, Clone, Copy)]
 pub enum RW {
@@ -25,16 +26,17 @@ pub enum InterruptLevel {
     D = 3,
 }
 
-#[derive(PackedStruct)]
-#[packed_struct(bit_numbering = "msb0")]
+#[derive(PackedStruct, Debug)]
+#[packed_struct(bit_numbering = "msb0", endian = "msb")]
 pub struct AnalyzerA {
     #[packed_field(endian = "msb")]
     num: u32,
-    #[packed_field(bits = "32", ty = "enum")]
+    _reserved: ReservedZero<packed_bits::Bits::<8>>,
+    #[packed_field(bits = "40", ty = "enum")]
     rw: RW,
-    #[packed_field(bits = "33..=34", ty = "enum")]
+    #[packed_field(bits = "41..=42", ty = "enum")]
     interrupt_level: InterruptLevel,
-    #[packed_field(bits = "35..=55", endian = "msb")]
+    #[packed_field(bits = "43..=63", endian = "msb")]
     address: Integer<u32, packed_bits::Bits<20>>,
 }
 
@@ -85,12 +87,47 @@ pub fn format_data(a: AnalyzerA) -> String {
 }
 
 fn main() {
-    let a = AnalyzerA {
-        num: 0,
-        rw: RW::Read,
-        interrupt_level: InterruptLevel::A,
-        address: 0x60000.into(),
-    };
+    // let a = AnalyzerA {
+    //     num: 0,
+    //     rw: RW::Read,
+    //     interrupt_level: InterruptLevel::A,
+    //     address: 0x60000.into(),
+    // };
 
-    println!("{}", format_data(a));
+    // println!("{}", format_data(a));
+
+    let ports = serialport5::available_ports().expect("No ports found!");
+    for p in ports {
+        println!("{}", p.port_name);
+    }
+
+    let mut port = SerialPort::builder()
+        .baud_rate(921_600)
+        .read_timeout(None)
+        .open("COM8")
+        .expect("Failed to open port");
+
+    let mut serial_buf: [u8; 8] = [0; 8];
+    loop {
+        let res = port.read(&mut serial_buf);
+        match res {
+            Err(e) => match e {
+                _ => continue,
+
+            },
+            Ok(_) => ()
+        }
+
+        println!("{:?}", serial_buf);
+
+
+        let data = AnalyzerA::unpack(&serial_buf);
+
+        if let Ok(d) = data {
+            println!("{}", format_data(d));
+        } else {
+            println!("{}", data.expect_err(""));
+        }
+
+    }
 }

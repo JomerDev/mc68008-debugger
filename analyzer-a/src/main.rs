@@ -1,32 +1,88 @@
 #![no_std]
 #![no_main]
 
-use defmt::*;
+use assign_resources::assign_resources;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
+use embassy_futures::select::{select, Either};
+use embassy_rp::gpio::{Input, Pull};
+use embassy_rp::peripherals::USB;
 use embassy_rp::pio::{
-    Common, Config, FifoJoin, Instance, InterruptHandler, Pio, PioPin, ShiftDirection, StateMachine,
+    Config as PioConfig, FifoJoin, InterruptHandler as InterruptHandlerPio, Pio, ShiftDirection,
 };
+use embassy_rp::usb::{Driver, InterruptHandler as InterruptHandlerUsb};
 use embassy_rp::{
-    bind_interrupts, gpio,
+    bind_interrupts, peripherals,
     peripherals::PIO0,
     pio::{Direction, ShiftConfig},
     Peripheral,
 };
-use embassy_time::{Duration, Timer};
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::channel::Channel;
+use embassy_time::Timer;
+use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use embassy_usb::{Builder, Config};
 use fixed::traits::ToFixed;
 use fixed_macro::types::U56F8;
-use gpio::{Level, Output};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
-    PIO0_IRQ_0 => InterruptHandler<PIO0>;
+    PIO0_IRQ_0 => InterruptHandlerPio<PIO0>;
+    USBCTRL_IRQ => InterruptHandlerUsb<USB>;
 });
 
+static SHARED: Channel<ThreadModeRawMutex, u32, 4> = Channel::new();
+
+assign_resources! {
+    pio: PioResources {
+        pin0: PIN_0,
+        pin1: PIN_1,
+        pin2: PIN_2,
+        pin3: PIN_3,
+        pin4: PIN_4,
+        pin5: PIN_5,
+        pin6: PIN_6,
+        pin7: PIN_7,
+        pin8: PIN_8,
+        pin9: PIN_9,
+        pin10: PIN_10,
+        pin11: PIN_11,
+        pin12: PIN_12,
+        pin13: PIN_13,
+        pin14: PIN_14,
+        pin15: PIN_15,
+        pin16: PIN_16,
+        pin17: PIN_17,
+        pin18: PIN_18,
+        pin19: PIN_19,
+        pin20: PIN_20,
+        pin21: PIN_21,
+        pin22: PIN_22,
+        pin24: PIN_24,
+        pin26: PIN_26,
+        pin27: PIN_27,
+        pin28: PIN_28,
+        pio: PIO0,
+        dma: DMA_CH0,
+    }
+    usb: UsbResources {
+        usb: USB
+    }
+}
+
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let pio = p.PIO0;
+    let r = split_resources!(p);
+    spawner.spawn(usb_serial(r.usb)).unwrap();
+    spawner.spawn(pio_task(r.pio)).unwrap();
+
+    // loop {}
+}
+
+#[embassy_executor::task]
+async fn pio_task(res: PioResources) {
+    let pio = res.pio;
     let Pio {
         mut common,
         sm0: mut sm,
@@ -36,21 +92,24 @@ async fn main(_spawner: Spawner) {
     let prg = pio_proc::pio_asm!(
         "set pins 0",
         "nop",
+        "nop"
         "nop",
         "nop",
         "nop",
+        "set pins 3",
         ".wrap_target",
         "wait 1 gpio 0  ; Wait for analyzer-b to be ready",
-        "set pins 3     ; Unset HALT"
-        "wait 1 gpio 1  ; Wait for AS",
-        "set pins, 2    ; Set HALT"
+        "set pins 2     ; Unset HALT"
+        "wait 1 gpio 26 ; Wait for AS to be negated"
+        "wait 0 gpio 26 ; Wait for AS",
+        "set pins, 3    ; Set HALT"
         "in pins, 22    ; Read address + IPL1 + IPL0",
         "in null, 10    ; Fill up the rest with zero",
         "push block     ; Push data and wait for it to be accepted"
         ".wrap",
     );
 
-    let mut config = Config::default();
+    let mut config = PioConfig::default();
     config.use_program(&common.load_program(&prg.program), &[]);
     config.clock_divider = (U56F8!(125_000_000) / U56F8!(16_000)).to_fixed();
     config.shift_in = ShiftConfig {
@@ -64,63 +123,146 @@ async fn main(_spawner: Spawner) {
         direction: ShiftDirection::Right,
     };
     config.out_sticky = true;
-    let pin0 = common.make_pio_pin(p.PIN_0);
-    let pin1 = common.make_pio_pin(p.PIN_1);
-    let pin2 = common.make_pio_pin(p.PIN_2);
-    let pin3 = common.make_pio_pin(p.PIN_3);
-    let pin4 = common.make_pio_pin(p.PIN_4);
-    let pin5 = common.make_pio_pin(p.PIN_5);
-    let pin6 = common.make_pio_pin(p.PIN_6);
-    let pin7 = common.make_pio_pin(p.PIN_7);
-    let pin8 = common.make_pio_pin(p.PIN_8);
-    let pin9 = common.make_pio_pin(p.PIN_9);
-    let pin10 = common.make_pio_pin(p.PIN_10);
-    let pin11 = common.make_pio_pin(p.PIN_11);
-    let pin12 = common.make_pio_pin(p.PIN_12);
-    let pin13 = common.make_pio_pin(p.PIN_13);
-    let pin14 = common.make_pio_pin(p.PIN_14);
-    let pin15 = common.make_pio_pin(p.PIN_15);
-    let pin16 = common.make_pio_pin(p.PIN_16);
-    let pin17 = common.make_pio_pin(p.PIN_17);
-    let pin18 = common.make_pio_pin(p.PIN_18);
-    let pin19 = common.make_pio_pin(p.PIN_19);
-    let pin20 = common.make_pio_pin(p.PIN_20);
-    let pin21 = common.make_pio_pin(p.PIN_21);
-    let pin22 = common.make_pio_pin(p.PIN_22);
-    let pin23 = common.make_pio_pin(p.PIN_23);
-    let pin26 = common.make_pio_pin(p.PIN_26);
-    let pin27 = common.make_pio_pin(p.PIN_27);
-    let pin28 = common.make_pio_pin(p.PIN_28);
+    let pin0 = common.make_pio_pin(res.pin0);
+    let pin1 = common.make_pio_pin(res.pin1);
+    let pin2 = common.make_pio_pin(res.pin2);
+    let pin3 = common.make_pio_pin(res.pin3);
+    let pin4 = common.make_pio_pin(res.pin4);
+    let pin5 = common.make_pio_pin(res.pin5);
+    let pin6 = common.make_pio_pin(res.pin6);
+    let pin7 = common.make_pio_pin(res.pin7);
+    let pin8 = common.make_pio_pin(res.pin8);
+    let pin9 = common.make_pio_pin(res.pin9);
+    let pin10 = common.make_pio_pin(res.pin10);
+    let pin11 = common.make_pio_pin(res.pin11);
+    let pin12 = common.make_pio_pin(res.pin12);
+    let pin13 = common.make_pio_pin(res.pin13);
+    let pin14 = common.make_pio_pin(res.pin14);
+    let pin15 = common.make_pio_pin(res.pin15);
+    let pin16 = common.make_pio_pin(res.pin16);
+    let pin17 = common.make_pio_pin(res.pin17);
+    let pin18 = common.make_pio_pin(res.pin18);
+    let pin19 = common.make_pio_pin(res.pin19);
+    let pin20 = common.make_pio_pin(res.pin20);
+    let pin21 = common.make_pio_pin(res.pin21);
+    let pin22 = common.make_pio_pin(res.pin22);
+    let pin26 = common.make_pio_pin(res.pin26);
+    let pin27 = common.make_pio_pin(res.pin27);
+    let pin28 = common.make_pio_pin(res.pin28);
     sm.set_pin_dirs(Direction::Out, &[&pin27, &pin28]);
     sm.set_pin_dirs(
         Direction::In,
         &[
             &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11,
             &pin12, &pin13, &pin14, &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
-            &pin23, &pin26,
+            &pin26,
         ],
     );
     config.set_set_pins(&[&pin27, &pin28]);
     config.set_in_pins(&[
-        &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11, &pin12,
-        &pin13, &pin14, &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22, &pin23,
+        &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11, &pin12,
+        &pin13, &pin14, &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
     ]);
     config.fifo_join = FifoJoin::RxOnly;
 
     sm.set_config(&config);
-    sm.set_enable(true);
+    sm.set_enable(false);
 
-    let mut dma_in_ref = p.DMA_CH1.into_ref();
+    let button = Input::new(res.pin24, Pull::Up);
+
+    let mut count: u32 = 0;
+    let mut was_pressed = false;
+
+    let mut dma_in_ref = res.dma.into_ref();
     let mut din = [0u32; 1];
-    loop {
-        let rx = sm.rx();
+    let dma_fut = async {
+        loop {
+            let res = select(sm.rx().dma_pull(dma_in_ref.reborrow(), &mut din), Timer::after_millis(1)).await;
+            // defmt::info!("Pull");
+            match res {
+                Either::First(_) => {
+                    defmt::info!("received DMA");
+                    SHARED.send(count).await;
+                    SHARED.send(din[0]).await;
+                    count = count.wrapping_add(1);
+                }
+                _ => (),
+            }
+            
+            if button.is_low() && !was_pressed {
+                was_pressed = true;
+                sm.set_enable(false);
+                defmt::info!("Disabled sm");
+            } else if button.is_high() && was_pressed {
+                was_pressed = false;
+                sm.set_enable(true);
+                defmt::info!("Enabled sm");
+            }
+        }
+    };
+    dma_fut.await;
 
-        rx.dma_pull(dma_in_ref.reborrow(), &mut din).await;
-
-        info!("Swapped {} words", din.len());
-    }
 }
 
-fn create_pio() -> {
-    
+#[embassy_executor::task]
+async fn usb_serial(usb: UsbResources) {
+    let driver = Driver::new(usb.usb, Irqs);
+
+    // Create embassy-usb Config
+    let mut config = Config::new(0xc0de, 0xcafe);
+    config.manufacturer = Some("Embassy");
+    config.product = Some("USB-serial example");
+    config.serial_number = Some("12345678");
+    config.max_power = 100;
+    config.max_packet_size_0 = 64;
+
+    // Required for windows compatibility.
+    // https://developer.nordicsemi.com/nRF_Connect_SDK/doc/1.9.1/kconfig/CONFIG_CDC_ACM_IAD.html#help
+    config.device_class = 0xEF;
+    config.device_sub_class = 0x02;
+    config.device_protocol = 0x01;
+    config.composite_with_iads = true;
+
+    // Create embassy-usb DeviceBuilder using the driver and config.
+    // It needs some buffers for building the descriptors.
+    let mut config_descriptor = [0; 256];
+    let mut bos_descriptor = [0; 256];
+    let mut device_descriptor = [0; 256];
+    let mut control_buf = [0; 64];
+
+    let mut state = State::new();
+
+    let mut builder = Builder::new(
+        driver,
+        config,
+        &mut device_descriptor, // no msos descriptors
+        &mut config_descriptor,
+        &mut bos_descriptor,
+        &mut [], // no msos descriptors
+        &mut control_buf,
+    );
+
+    // Create classes on the builder.
+    let mut class = CdcAcmClass::new(&mut builder, &mut state, 64);
+
+    // Build the builder.
+    let mut usb = builder.build();
+
+    // Run the USB device.
+    let usb_fut = usb.run();
+
+    // Do stuff with the class!
+    let echo_fut = async {
+        defmt::info!("Startup");
+        loop {
+            let byte = SHARED.receive().await;
+            let bytes = byte.to_le_bytes();
+            defmt::info!("Write {}", bytes);
+            let _ = class.write_packet(&bytes).await;
+        }
+    };
+
+    // Run everything concurrently.
+    // If we had made everything `'static` above instead, we could do this using separate tasks instead.
+    join(usb_fut, echo_fut).await;
 }
