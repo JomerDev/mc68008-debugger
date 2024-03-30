@@ -118,24 +118,18 @@ async fn pio_task(res: PioResources) {
     let pin28 = common.make_pio_pin(res.pin28);
 
     let prg = pio_proc::pio_asm!(
-        ".side_set 2 opt"
-        // "set pins 0",
-        "loop:",
-        "nop side 0b10"
-        "jmp loop side 0b10",
-        "nop",
-        "nop",
-        "set pins 3",
-        ".wrap_target",
-        "wait 1 gpio 0  ; Wait for analyzer-b to be ready",
-        "set pins 2     ; Unset HALT"
-        "wait 1 gpio 26 ; Wait for AS to be negated"
-        "wait 0 gpio 26 ; Wait for AS",
-        "set pins, 3    ; Set HALT"
-        "in pins, 22    ; Read address + IPL1 + IPL0",
-        "in null, 10    ; Fill up the rest with zero",
-        "push block     ; Push data and wait for it to be accepted"
-        ".wrap",
+        r#"
+            .side_set 2 opt
+            loop2:
+                wait 1 gpio 0   side 0b10   ; Wait for analyzer-b to be ready
+                nop             side 0b11   ; Unset HALT
+                wait 1 gpio 26  side 0b11   ; Wait for AS to be negated
+                wait 0 gpio 26  side 0b11   ; Wait for AS
+                in pins, 21     side 0b10   ; Read R/W + address
+                in null, 11     side 0b10   ; Fill up the rest with zero
+                push block      side 0b10   ; Push data and wait for it to be accepted
+                jmp loop2       side 0b10
+        "#
     );
 
     let mut config = PioConfig::default();
@@ -209,7 +203,7 @@ async fn pio_task(res: PioResources) {
             // defmt::info!("Pull");
             match res {
                 Either::First(_) => {
-                    defmt::info!("received DMA");
+                    // defmt::info!("received DMA");
                     SHARED.send(count).await;
                     SHARED.send(din[0]).await;
                     count = count.wrapping_add(1);
@@ -283,10 +277,18 @@ async fn usb_serial(usb: UsbResources) {
     let echo_fut = async {
         defmt::info!("Startup");
         loop {
-            let byte = SHARED.receive().await;
-            let bytes = byte.to_le_bytes();
-            defmt::info!("Write {}", bytes);
-            let _ = class.write_packet(&bytes).await;
+            class.wait_connection().await;
+            defmt::info!("Connected");
+            loop {
+                let byte = SHARED.receive().await;
+                let bytes = byte.to_le_bytes();
+                defmt::info!("Write {}", bytes);
+                let res = class.write_packet(&bytes).await;
+                if let Err(embassy_usb_driver::EndpointError::Disabled) = res {
+                    defmt::info!("Disconnected");
+                    break;
+                }
+            }
         }
     };
 

@@ -29,15 +29,16 @@ pub enum InterruptLevel {
 #[derive(PackedStruct, Debug)]
 #[packed_struct(bit_numbering = "msb0", endian = "msb")]
 pub struct AnalyzerA {
-    #[packed_field(endian = "msb")]
+    #[packed_field(endian = "msb", bits = "0..=31")]
     num: u32,
-    _reserved: ReservedZero<packed_bits::Bits::<8>>,
-    #[packed_field(bits = "40", ty = "enum")]
-    rw: RW,
-    #[packed_field(bits = "41..=42", ty = "enum")]
-    interrupt_level: InterruptLevel,
-    #[packed_field(bits = "43..=63", endian = "msb")]
+    _reserved: ReservedZero<packed_bits::Bits::<11>>,
+    
+    // #[packed_field(bits = "41..=42", ty = "enum")]
+    // interrupt_level: InterruptLevel,
+    #[packed_field(bits = "43..63", endian = "msb")]
     address: Integer<u32, packed_bits::Bits<20>>,
+    #[packed_field(bits = "63", ty = "enum")]
+    rw: RW,
 }
 
 #[derive(PackedStruct)]
@@ -104,7 +105,7 @@ fn main() {
     let mut port = SerialPort::builder()
         .baud_rate(921_600)
         .read_timeout(None)
-        .open("COM5")
+        .open("COM8")
         .expect("Failed to open port");
 
     let mut serial_buf: [u8; 8] = [0; 8];
