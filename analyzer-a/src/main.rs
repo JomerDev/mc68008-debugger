@@ -33,6 +33,8 @@ bind_interrupts!(struct Irqs {
 
 static SHARED: Channel<ThreadModeRawMutex, u32, 4> = Channel::new();
 
+static MHZ: u64 = 2;
+
 assign_resources! {
     pio: PioResources {
         pin0: PIN_0,
@@ -87,6 +89,7 @@ async fn pio_task(res: PioResources) {
         mut common,
         sm0: mut sm,
         mut sm1,
+        mut sm2,
         ..
     } = Pio::new(pio, Irqs);
 
@@ -120,13 +123,21 @@ async fn pio_task(res: PioResources) {
     let prg = pio_proc::pio_asm!(
         r#"
             .side_set 2 opt
+            ;loop:
+            ;    nop             side 0b11
+            ;    jmp loop        side 0b11
+
             loop2:
                 wait 1 gpio 0   side 0b10   ; Wait for analyzer-b to be ready
-                nop             side 0b11   ; Unset HALT
+                in null, 11     side 0b11   ; Unset HALT
                 wait 1 gpio 26  side 0b11   ; Wait for AS to be negated
                 wait 0 gpio 26  side 0b11   ; Wait for AS
-                in pins, 21     side 0b10   ; Read R/W + address
-                in null, 11     side 0b10   ; Fill up the rest with zero
+                in pins, 21     side 0b11   ; Read R/W + address
+                ;in null, 11     side 0b10   ; Fill up the rest with zero
+                // nop             side 0b10
+                // nop             side 0b10
+                // nop             side 0b10
+                // nop             side 0b10
                 push block      side 0b10   ; Push data and wait for it to be accepted
                 jmp loop2       side 0b10
         "#
@@ -134,7 +145,7 @@ async fn pio_task(res: PioResources) {
 
     let mut config = PioConfig::default();
     config.use_program(&common.load_program(&prg.program), &[&pin27, &pin28]);
-    config.clock_divider = (U56F8!(125_000_000) / U56F8!(16_000)).to_fixed();
+    config.clock_divider = (U56F8!(125_000_000) / (MHZ*2*1_000_000)).to_fixed();
     config.shift_in = ShiftConfig {
         auto_fill: false,
         threshold: 32,
@@ -150,7 +161,7 @@ async fn pio_task(res: PioResources) {
     sm.set_pin_dirs(
         Direction::In,
         &[
-            &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11,
+            &pin0, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11,
             &pin12, &pin13, &pin14, &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
             &pin26,
         ],
@@ -178,7 +189,7 @@ async fn pio_task(res: PioResources) {
 
     let mut config2 = PioConfig::default();
     config2.use_program(&common.load_program(&prg2.program), &[&pin27, &pin28]);
-    config2.clock_divider = (U56F8!(125_000_000) / U56F8!(16_000)).to_fixed();
+    config2.clock_divider = (U56F8!(125_000_000) / (MHZ*2*1_000_000)).to_fixed();
     
     sm1.set_pin_dirs(Direction::Out, &[&pin27, &pin28]);
     config2.set_set_pins(&[&pin27, &pin28]);
@@ -188,11 +199,30 @@ async fn pio_task(res: PioResources) {
     sm1.set_config(&config2);
     sm1.set_enable(true);
 
+    let prg3 = pio_proc::pio_asm!(
+        r#"
+            .side_set 1
+
+            loop:
+                nop         side 0b1
+                jmp loop    side 0b0
+        "#
+    );
+
+    let mut config3 = PioConfig::default();
+    config3.use_program(&common.load_program(&prg3.program), &[&pin1]);
+    config3.clock_divider = (U56F8!(125_000_000) / (MHZ*2*1_000_000)).to_fixed();
+    
+    sm2.set_pin_dirs(Direction::Out, &[&pin1]);
+
+    sm2.set_config(&config3);
+    sm2.set_enable(true);
+
 
     let button = Input::new(res.pin24, Pull::Up);
 
     let mut count: u32 = 0;
-    let mut was_pressed = false;
+    let mut was_pressed = true;
     let mut is_enabled = false;
 
     let mut dma_in_ref = res.dma.into_ref();
@@ -281,8 +311,8 @@ async fn usb_serial(usb: UsbResources) {
             defmt::info!("Connected");
             loop {
                 let byte = SHARED.receive().await;
-                let bytes = byte.to_le_bytes();
-                defmt::info!("Write {}", bytes);
+                let bytes = byte.to_be_bytes();
+                // defmt::info!("Write {}", bytes);
                 let res = class.write_packet(&bytes).await;
                 if let Err(embassy_usb_driver::EndpointError::Disabled) = res {
                     defmt::info!("Disconnected");

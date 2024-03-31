@@ -1,12 +1,12 @@
-use std::{fmt::Display, io::Read, time::Duration};
+use std::{fmt::Display, fs::File, io::{Read, Write}, time::Duration};
 
 use packed_struct::prelude::*;
 use serialport5::SerialPort;
 
 #[derive(PrimitiveEnum_u8, Debug, Clone, Copy)]
 pub enum RW {
-    Read = 0,
-    Write = 1,
+    Read = 1,
+    Write = 0,
 }
 
 impl Display for RW {
@@ -31,14 +31,15 @@ pub enum InterruptLevel {
 pub struct AnalyzerA {
     #[packed_field(endian = "msb", bits = "0..=31")]
     num: u32,
-    _reserved: ReservedZero<packed_bits::Bits::<11>>,
     
+    _reserved: ReservedZero<packed_bits::Bits::<10>>,
     // #[packed_field(bits = "41..=42", ty = "enum")]
     // interrupt_level: InterruptLevel,
-    #[packed_field(bits = "43..63", endian = "msb")]
+    #[packed_field(bits = "42..63", endian = "msb")]
     address: Integer<u32, packed_bits::Bits<20>>,
     #[packed_field(bits = "63", ty = "enum")]
     rw: RW,
+    
 }
 
 #[derive(PackedStruct)]
@@ -80,22 +81,20 @@ pub fn get_address_area(address: u32) -> String {
 
 pub fn format_data(a: AnalyzerA) -> String {
     format!(
-        "{} | {:07x} | {: >10} |",
+        "{} | {:07x} | {: >10} | {:?}",
         a.rw,
         a.address.to_le(),
-        get_address_area(a.address.to_le())
+        get_address_area(a.address.to_le()),
+        a.address.to_le()
     )
 }
 
 fn main() {
-    // let a = AnalyzerA {
-    //     num: 0,
-    //     rw: RW::Read,
-    //     interrupt_level: InterruptLevel::A,
-    //     address: 0x60000.into(),
-    // };
+    // let bytes: [u8; 8] = [0,0,0,0,0, 0b00010000,0,0];
+    // let bytes: [u8; 8] = [0,0,0,0,0, 0,0,9];
 
-    // println!("{}", format_data(a));
+    // println!("{:?}\t{}", bytes, format_data(AnalyzerA::unpack(&bytes).unwrap()));
+    // return;
 
     let ports = serialport5::available_ports().expect("No ports found!");
     for p in ports {
@@ -105,8 +104,10 @@ fn main() {
     let mut port = SerialPort::builder()
         .baud_rate(921_600)
         .read_timeout(None)
-        .open("COM8")
+        .open("COM5")
         .expect("Failed to open port");
+
+    let mut file = File::create("log.txt").unwrap();
 
     let mut serial_buf: [u8; 8] = [0; 8];
     loop {
@@ -119,13 +120,14 @@ fn main() {
             Ok(_) => ()
         }
 
-        println!("{:?}", serial_buf);
-
+        let _ = write!(file, "{: >3?}\t", serial_buf);
+        // print!(  "{:?}\t", serial_buf);
 
         let data = AnalyzerA::unpack(&serial_buf);
 
         if let Ok(d) = data {
-            println!("{}", format_data(d));
+            // print!( "{}\n", format_data(d));
+            let _ = write!(file, "{}\n", format_data(d));
         } else {
             println!("{}", data.expect_err(""));
         }
