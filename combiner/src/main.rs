@@ -102,7 +102,7 @@ fn main() {
     }
 
     let mut port = SerialPort::builder()
-        .baud_rate(921_600)
+        .baud_rate(921_600*8)
         .read_timeout(None)
         .open("COM5")
         .expect("Failed to open port");

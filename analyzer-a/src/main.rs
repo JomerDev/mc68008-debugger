@@ -134,10 +134,10 @@ async fn pio_task(res: PioResources) {
                 wait 0 gpio 26  side 0b11   ; Wait for AS
                 in pins, 21     side 0b11   ; Read R/W + address
                 ;in null, 11     side 0b10   ; Fill up the rest with zero
-                // nop             side 0b10
-                // nop             side 0b10
-                // nop             side 0b10
-                // nop             side 0b10
+                ;// nop             side 0b10
+                ;// nop             side 0b10
+                ;// nop             side 0b10
+                ;// nop             side 0b10
                 push block      side 0b10   ; Push data and wait for it to be accepted
                 jmp loop2       side 0b10
         "#
@@ -244,8 +244,8 @@ async fn pio_task(res: PioResources) {
             if button.is_low() && !was_pressed {
                 was_pressed = true;
                 is_enabled = !is_enabled;
-                sm.set_enable(is_enabled);
                 sm1.set_enable(!is_enabled);
+                sm.set_enable(is_enabled);
                 defmt::info!("sm {}", is_enabled);
             } else if button.is_high() && was_pressed {
                 was_pressed = false;
