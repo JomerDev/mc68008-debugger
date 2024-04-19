@@ -5,6 +5,8 @@ use assign_resources::assign_resources;
 use defmt::unwrap;
 use embassy_executor::{Executor, Spawner};
 
+use embassy_rp::clocks::{clk_sys_freq, pll_sys_freq};
+use embassy_rp::config::Config;
 use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::peripherals::PIO1;
 // use embassy_rp::gpio::{AnyPin, Level, Output};
@@ -13,7 +15,7 @@ use embassy_rp::pio::{
     ShiftConfig, ShiftDirection, StateMachine,
 };
 
-use embassy_rp::Peripheral;
+use embassy_rp::{pac, Peripheral};
 use embassy_rp::{
     bind_interrupts,
     peripherals,
@@ -74,10 +76,32 @@ assign_resources! {
 static mut CORE1_STACK: Stack<4096> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
+trait Overclock<T> {
+    fn overclock() -> T;
+}
+
+impl Overclock<embassy_rp::config::Config> for embassy_rp::config::Config {
+    fn overclock() -> Self {
+        let mut config = Self::default();
+        if let Some(xosc) = config.clocks.xosc.as_mut() {
+            if let Some(sys_pll) = xosc.sys_pll.as_mut() {
+                sys_pll.post_div2 = 1;
+            }
+        }
+        config
+    }
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
+    let p = embassy_rp::init(Config::overclock());
     let r = split_resources!(p);
+
+    defmt::info!("Clock speed {} {}", clk_sys_freq(), pll_sys_freq() );
+
+    pac::BUSCTRL.bus_priority().modify(|b| {
+        b.set_proc1(true);
+    });
 
     let Pio {
         mut common,
@@ -245,20 +269,20 @@ async fn eeprom(res: PioResources, mut sm: StateMachine<'static, PIO0, 0>) {
 
     sm.set_enable(true);
 
-    let mut din: u32 = 0; //[0u32; 1];
+    let mut din = [0u32; 1];
     let mut dout: u32 = 0; //[0u32; 1];
 
-    // let mut dma_out_ref = res.dma1.into_ref();
-    // let mut dma_in_ref = res.dma2.into_ref();
+    let mut dma_out_ref = res.dma1.into_ref();
+    let mut dma_in_ref = res.dma2.into_ref();
 
     loop {
-        // din = sm.rx().wait_pull(dma_in_ref.reborrow(), &mut din).await;
-        din = sm.rx().wait_pull().await;
-        match din {
-            _ => dout = din & 0x000000FF,
+        sm.rx().dma_pull(dma_in_ref.reborrow(), &mut din).await;
+        // din = sm.rx().wait_pull().await;
+        if din[0] < 0x00010000 {
+            dout = din[0] & 0x000000FF;
+            // sm.tx().wait_push(dout).await;
+            sm.tx().dma_push(dma_out_ref.reborrow(), &[dout]).await;
         }
-        // sm.tx().dma_push(dma_out_ref.reborrow(), &dout).await;
-        sm.tx().wait_push(dout).await;
     }
 }
 
