@@ -1,3 +1,5 @@
+/*Copied directly from cortex-m-rt. Modified slightly for rp2040-boot2 run from ram feature*/
+
 /* # Developer notes
 
 - Symbols that start with a double underscore (__) are considered "private"

@@ -73,7 +73,7 @@ assign_resources! {
     }
 }
 
-static mut CORE1_STACK: Stack<4096> = Stack::new();
+static mut CORE1_STACK: Stack<1024> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
 trait Overclock<T> {
@@ -94,7 +94,7 @@ impl Overclock<embassy_rp::config::Config> for embassy_rp::config::Config {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = embassy_rp::init(Config::overclock());
+    let p = embassy_rp::init(Config::default());
     let r = split_resources!(p);
 
     defmt::info!("Clock speed {} {}", clk_sys_freq(), pll_sys_freq() );
