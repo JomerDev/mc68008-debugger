@@ -7,6 +7,7 @@ use embassy_executor::{Executor, Spawner};
 
 use embassy_rp::clocks::{clk_sys_freq, pll_sys_freq};
 use embassy_rp::config::Config;
+use embassy_rp::gpio::{Level, Output};
 use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::peripherals::PIO1;
 // use embassy_rp::gpio::{AnyPin, Level, Output};
@@ -70,6 +71,9 @@ assign_resources! {
     pio2: PioResources2 {
         dma1: DMA_CH2,
         dma2: DMA_CH3,
+    },
+    pio3: PioResources3 {
+        pin25: PIN_25
     }
 }
 
@@ -94,7 +98,10 @@ impl Overclock<embassy_rp::config::Config> for embassy_rp::config::Config {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = embassy_rp::init(Config::default());
+    unsafe {
+        cortex_m::Peripherals::take().unwrap().SCB.vtor.write(0x20000000+4);
+    }
+    let p = embassy_rp::init(Config::overclock());
     let r = split_resources!(p);
 
     defmt::info!("Clock speed {} {}", clk_sys_freq(), pll_sys_freq() );
@@ -250,6 +257,7 @@ async fn main(spawner: Spawner) {
 
     // defmt::info!("ShiftConfig: {}, {}, {}", con.threshold, con.direction, con.auto_fill);
     spawner.spawn(eeprom_test(r.pio2, sm1)).unwrap();
+    spawner.spawn(led_test(r.pio3)).unwrap();
 
     spawn_core1(
         p.CORE1,
@@ -287,7 +295,7 @@ async fn eeprom(res: PioResources, mut sm: StateMachine<'static, PIO0, 0>) {
 }
 
 #[embassy_executor::task]
-async fn eeprom_test(res: PioResources2,  mut sm: StateMachine<'static, PIO0, 1>) {    
+async fn eeprom_test(_res: PioResources2,  mut sm: StateMachine<'static, PIO0, 1>) {    
 
     sm.set_enable(true);
 
@@ -304,4 +312,15 @@ async fn eeprom_test(res: PioResources2,  mut sm: StateMachine<'static, PIO0, 1>
         sm.set_enable(false);
     };
     dma_fut.await;
+}
+
+#[embassy_executor::task]
+async fn led_test(res: PioResources3) {    
+    let mut out = Output::new(res.pin25, Level::Low);
+    loop {
+        out.set_high();
+        Timer::after_secs(1).await;
+        out.set_low();
+        Timer::after_secs(1).await;
+    };
 }
