@@ -8,7 +8,6 @@ use embassy_rp::clocks::{clk_sys_freq, pll_sys_freq};
 use embassy_rp::config::Config;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::PIO1;
-
 use embassy_rp::pio::{
     Config as PioConfig, Direction, FifoJoin, InterruptHandler as InterruptHandlerPio, Pio,
     ShiftConfig, ShiftDirection, StateMachine,
@@ -22,6 +21,7 @@ use embassy_rp::{
 
 use embassy_time::Timer;
 use fixed::traits::ToFixed;
+use fixed_macro::types::U56F8;
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -103,8 +103,8 @@ async fn main(spawner: Spawner) {
 
     let Pio {
         mut common,
-        sm0: mut sm,
-        // mut sm1,
+        // sm0: mut sm,
+        mut sm1,
         ..
     } = Pio::new(r.pins.pio, Irqs);
 
@@ -134,90 +134,94 @@ async fn main(spawner: Spawner) {
     let pin22 = common.make_pio_pin(r.pins.pin22);
     let pin26 = common.make_pio_pin(r.pins.pin26);
 
-    let prg = pio_proc::pio_asm!(
+    let prg2 = pio_proc::pio_asm!(
         r#"
+            .side_set 1
+
             loop:
-                in null, 17         ; Read 17 null bits
-                wait 0 gpio 26       ; Wait for OE to be negated
-                in pins, 15         ; Read address
-                push block
-                pull block
-                out pins, 32         ; Write data
-                wait 1 gpio 26
-                jmp loop
+                pull block          side 0b1
+                out pins, 32        side 0b0    ; Write address
+                ;nop                 side 0b1
+                ;nop                 side 0b1
+                nop                 side 0b0
+                in pins, 8          side 0b0    ; Read data
+                in null, 24         side 0b1    ; Read 24 null bits
+                push block          side 0b1
+                ;nop                 side 0b0
+                ;nop                 side 0b0
+                jmp loop            side 0b1
         "#
     );
 
-    let mut config = PioConfig::default();
-    config.use_program(&common.load_program(&prg.program), &[]);
-    config.clock_divider = (1).to_fixed();
-    config.shift_in = ShiftConfig {
+    let mut config2 = PioConfig::default();
+    config2.use_program(&common.load_program(&prg2.program), &[&pin26]);
+    config2.clock_divider = (U56F8!(125_000_000) / (1*1*1_000_000)).to_fixed();
+    config2.shift_in = ShiftConfig {
         auto_fill: false,
         threshold: 32,
         direction: ShiftDirection::Left,
     };
-    config.shift_out = ShiftConfig {
+    config2.shift_out = ShiftConfig {
         auto_fill: false,
         threshold: 32,
         direction: ShiftDirection::Right,
     };
-    config.out_sticky = false;
-    sm.set_pin_dirs(
-        Direction::Out,
+    config2.out_sticky = false;
+    sm1.set_pin_dirs(
+        Direction::In,
         &[
             &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
         ],
     );
-    sm.set_pin_dirs(
-        Direction::In,
+    sm1.set_pin_dirs(
+        Direction::Out,
         &[
             &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11, &pin12,
             &pin13, &pin14, &pin26, 
-            // &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
         ],
     );
-    config.set_in_pins(&[
+    config2.set_out_pins(&[
         &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11,
-        &pin12, &pin13, &pin14, 
+        &pin12, &pin13, &pin14,
     ]);
-    config.set_out_pins(&[
+    config2.set_in_pins(&[
         &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
     ]);
-    config.fifo_join = FifoJoin::Duplex;
+    config2.fifo_join = FifoJoin::Duplex;
 
-    sm.set_config(&config);
+    sm1.set_config(&config2);
 
     Timer::after_secs(2).await;
     
     defmt::info!("Startup");
-
+    spawner.spawn(eeprom_test(r.pio2, sm1)).unwrap();
     spawner.spawn(led_test(r.pio3)).unwrap();
-    let _ = spawner.spawn(eeprom(r.pio, sm));
 
 }
 
+
 #[embassy_executor::task]
-async fn eeprom(_res: PioResources, mut sm: StateMachine<'static, PIO0, 0>) {
+async fn eeprom_test(_res: PioResources2,  mut sm: StateMachine<'static, PIO0, 1>) {    
 
     sm.set_enable(true);
 
-    // let mut din = [0u32; 1];
-    let mut din: u32 = 98;
-    let mut dout: u32 = 0; //[0u32; 1];
+    // let mut dma_in_ref = res.dma1.into_ref();
+    // let mut dma_out_ref = res.dma2.into_ref();
 
-    // let mut dma_out_ref = res.dma1.into_ref();
-    // let mut dma_in_ref = res.dma2.into_ref();
-
-    loop {
-        // sm.rx().dma_pull(dma_in_ref.reborrow(), &mut din).await;
-        din = sm.rx().wait_pull().await;
-        if din < 0x00010000 {
-            dout = din & 0x000000FF;
-            defmt::info!("{} {}", din, dout);
-            sm.tx().wait_push(dout).await;
-            // sm.tx().dma_push(dma_out_ref.reborrow(), &[dout]).await;
+    // sm.rx().wait_pull().await;
+    let mut din: u32 = 99;
+    let dma_fut = async {
+        for t in 0u8..33 {
+            Timer::after_millis(50).await;
+            sm.tx().wait_push(u32::from_be_bytes([0,0,0,t])).await;
+            din = sm.rx().wait_pull().await;
+            defmt::info!("{} {}", t, u32::from_be(din));
         }
-    }
+        // sm.set_enable(false);
+        din = sm.rx().wait_pull().await;
+        defmt::info!("Last value: {}", u32::from_be(din));
+    };
+    dma_fut.await;
 }
 
 #[embassy_executor::task]
