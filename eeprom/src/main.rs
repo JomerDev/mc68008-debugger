@@ -101,7 +101,7 @@ async fn main(spawner: Spawner) {
     unsafe {
         cortex_m::Peripherals::take().unwrap().SCB.vtor.write(0x20000000+4);
     }
-    let p = embassy_rp::init(Config::overclock());
+    let p = embassy_rp::init(Config::default());
     let r = split_resources!(p);
 
     defmt::info!("Clock speed {} {}", clk_sys_freq(), pll_sys_freq() );
