@@ -6,8 +6,9 @@ use embassy_executor::Spawner;
 
 use embassy_rp::clocks::{clk_sys_freq, pll_sys_freq};
 use embassy_rp::config::Config;
+use embassy_rp::flash::{Blocking, Flash};
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::PIO1;
+use embassy_rp::peripherals::{FLASH, PIO1};
 use embassy_rp::pio::{
     Config as PioConfig, Direction, FifoJoin, InterruptHandler as InterruptHandlerPio, Pio,
     ShiftConfig, ShiftDirection, StateMachine,
@@ -22,7 +23,10 @@ use embassy_rp::{
 use embassy_time::Timer;
 use fixed::traits::ToFixed;
 use fixed_macro::types::U56F8;
+use rand_chacha::rand_core::RngCore;
 use {defmt_rtt as _, panic_probe as _};
+
+use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandlerPio<PIO0>;
@@ -65,6 +69,7 @@ assign_resources! {
     pio2: PioResources2 {
         dma1: DMA_CH2,
         dma2: DMA_CH3,
+        flash: FLASH
     },
     pio3: PioResources3 {
         pin25: PIN_25
@@ -87,12 +92,37 @@ impl Overclock<embassy_rp::config::Config> for embassy_rp::config::Config {
     }
 }
 
+pub fn get_unique_id(flash: &mut FLASH) -> Option<u64> {
+    let mut flash: Flash<'_, FLASH, Blocking, { 2 * 1024 * 1024 }> = Flash::new_blocking(flash);
+
+    // TODO: For different flash chips, we want to handle things
+    // differently based on their jedec? That being said: I control
+    // the hardware for this project, and both chips (Pico and XIAO)
+    // support unique ID, so oh well.
+    //
+    // let jedec = flash.blocking_jedec_id().unwrap();
+
+    let mut id = [0u8; core::mem::size_of::<u64>()];
+    flash.blocking_unique_id(&mut id).unwrap();
+    Some(u64::from_be_bytes(id))
+}
+
+pub fn get_rand(unique_id: u64) -> ChaCha8Rng {
+    // TODO: Get some real entropy
+    let mut seed = [0u8; 32];
+    let uid = unique_id.to_le_bytes();
+    seed.chunks_exact_mut(8).for_each(|c| {
+        c.copy_from_slice(&uid);
+    });
+    ChaCha8Rng::from_seed(seed)
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     // unsafe {
     //     // cortex_m::Peripherals::take().unwrap().SCB.vtor.write(0x20000000+4);
     // }
-    let p = embassy_rp::init(Config::overclock());
+    let p = embassy_rp::init(Config::default());
     let r = split_resources!(p);
 
     defmt::info!("Clock speed {} {}", clk_sys_freq(), pll_sys_freq() );
@@ -139,23 +169,18 @@ async fn main(spawner: Spawner) {
             .side_set 1
 
             loop:
-                pull block          side 0b1
-                out pins, 32        side 0b0    ; Write address
-                ;nop                 side 0b1
-                ;nop                 side 0b1
-                nop                 side 0b0
-                in pins, 8          side 0b0    ; Read data
-                in null, 24         side 0b1    ; Read 24 null bits
-                push block          side 0b1
-                ;nop                 side 0b0
-                ;nop                 side 0b0
-                jmp loop            side 0b1
+                pull block          side 0b0
+                out pins, 32        side 0b1    ; Write address
+                in pins, 8          side 0b1    ; Read data
+                in null, 24         side 0b0    ; Read 24 null bits
+                push block          side 0b0
+                jmp loop            side 0b0
         "#
     );
 
     let mut config2 = PioConfig::default();
     config2.use_program(&common.load_program(&prg2.program), &[&pin26]);
-    config2.clock_divider = (U56F8!(125_000_000) / (1*1*1_000_000)).to_fixed();
+    config2.clock_divider = (U56F8!(125_000_000) / (1*2*1_000_000)).to_fixed();
     config2.shift_in = ShiftConfig {
         auto_fill: false,
         threshold: 32,
@@ -201,7 +226,7 @@ async fn main(spawner: Spawner) {
 
 
 #[embassy_executor::task]
-async fn eeprom_test(_res: PioResources2,  mut sm: StateMachine<'static, PIO0, 1>) {    
+async fn eeprom_test(mut res: PioResources2,  mut sm: StateMachine<'static, PIO0, 1>) {    
 
     sm.set_enable(true);
 
@@ -209,17 +234,25 @@ async fn eeprom_test(_res: PioResources2,  mut sm: StateMachine<'static, PIO0, 1
     // let mut dma_out_ref = res.dma2.into_ref();
 
     // sm.rx().wait_pull().await;
+
+    let mut rand = get_rand(get_unique_id(&mut res.flash).unwrap_or(21365213));
+
     let mut din: u32 = 99;
+    let mut wrong: u32 = 0;
     let dma_fut = async {
-        for t in 0u8..33 {
-            Timer::after_millis(50).await;
-            sm.tx().wait_push(u32::from_be_bytes([0,0,0,t])).await;
-            din = sm.rx().wait_pull().await;
-            defmt::info!("{} {}", t, u32::from_be(din));
+        for i in 0u32..65_536 {
+            let t = rand.next_u32() & 0x0000FFFF;
+            Timer::after_nanos(125*4).await;
+            sm.tx().wait_push(u32::from_le(t)).await;
+            din = u32::from_be(sm.rx().wait_pull().await);
+            if din != (t & 0x000000FF) {
+                wrong += 1;
+                defmt::info!("{} {} {}", i, din, t & 0x000000FF);
+            }
         }
-        // sm.set_enable(false);
-        din = sm.rx().wait_pull().await;
-        defmt::info!("Last value: {}", u32::from_be(din));
+        sm.set_enable(false);
+        // din = sm.rx().wait_pull().await;
+        defmt::info!("Wrong values: {}", wrong);
     };
     dma_fut.await;
 }
