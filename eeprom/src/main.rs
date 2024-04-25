@@ -7,14 +7,13 @@ use embassy_executor::{Executor, Spawner};
 
 use embassy_rp::clocks::{clk_sys_freq, pll_sys_freq};
 use embassy_rp::config::Config;
-use embassy_rp::gpio::{Level, Output};
+use embassy_rp::gpio::{Drive, Level, Output, SlewRate};
 use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::pac;
 use embassy_rp::peripherals::PIO1;
 
 use embassy_rp::pio::{
-    Config as PioConfig, Direction, FifoJoin, InterruptHandler as InterruptHandlerPio, Pio,
-    ShiftConfig, ShiftDirection, StateMachine,
+    Common, Config as PioConfig, Direction, FifoJoin, InterruptHandler as InterruptHandlerPio, Pin, Pio, ShiftConfig, ShiftDirection, StateMachine
 };
 
 use embassy_rp::{
@@ -110,43 +109,147 @@ async fn main(spawner: Spawner) {
 
     let Pio {
         mut common,
-        sm0: mut sm,
+        sm0: mut read_sm,
+        sm1: mut write_sm,
         ..
     } = Pio::new(r.pins.pio, Irqs);
 
-    let pin0 = common.make_pio_pin(r.pins.pin0);
-    let pin1 = common.make_pio_pin(r.pins.pin1);
-    let pin2 = common.make_pio_pin(r.pins.pin2);
-    let pin3 = common.make_pio_pin(r.pins.pin3);
-    let pin4 = common.make_pio_pin(r.pins.pin4);
-    let pin5 = common.make_pio_pin(r.pins.pin5);
-    let pin6 = common.make_pio_pin(r.pins.pin6);
-    let pin7 = common.make_pio_pin(r.pins.pin7);
-    let pin8 = common.make_pio_pin(r.pins.pin8);
-    let pin9 = common.make_pio_pin(r.pins.pin9);
-    let pin10 = common.make_pio_pin(r.pins.pin10);
-    let pin11 = common.make_pio_pin(r.pins.pin11);
-    let pin12 = common.make_pio_pin(r.pins.pin12);
-    let pin13 = common.make_pio_pin(r.pins.pin13);
-    let pin14 = common.make_pio_pin(r.pins.pin14);
+    let mut pin0 = common.make_pio_pin(r.pins.pin0);
+    let mut pin1 = common.make_pio_pin(r.pins.pin1);
+    let mut pin2 = common.make_pio_pin(r.pins.pin2);
+    let mut pin3 = common.make_pio_pin(r.pins.pin3);
+    let mut pin4 = common.make_pio_pin(r.pins.pin4);
+    let mut pin5 = common.make_pio_pin(r.pins.pin5);
+    let mut pin6 = common.make_pio_pin(r.pins.pin6);
+    let mut pin7 = common.make_pio_pin(r.pins.pin7);
+    let mut pin8 = common.make_pio_pin(r.pins.pin8);
+    let mut pin9 = common.make_pio_pin(r.pins.pin9);
+    let mut pin10 = common.make_pio_pin(r.pins.pin10);
+    let mut pin11 = common.make_pio_pin(r.pins.pin11);
+    let mut pin12 = common.make_pio_pin(r.pins.pin12);
+    let mut pin13 = common.make_pio_pin(r.pins.pin13);
+    let mut pin14 = common.make_pio_pin(r.pins.pin14);
 
-    let pin15 = common.make_pio_pin(r.pins.pin15);
-    let pin16 = common.make_pio_pin(r.pins.pin16);
-    let pin17 = common.make_pio_pin(r.pins.pin17);
-    let pin18 = common.make_pio_pin(r.pins.pin18);
-    let pin19 = common.make_pio_pin(r.pins.pin19);
-    let pin20 = common.make_pio_pin(r.pins.pin20);
-    let pin21 = common.make_pio_pin(r.pins.pin21);
-    let pin22 = common.make_pio_pin(r.pins.pin22);
-    let pin26 = common.make_pio_pin(r.pins.pin26);
+    let mut pin15 = common.make_pio_pin(r.pins.pin15);
+    let mut pin16 = common.make_pio_pin(r.pins.pin16);
+    let mut pin17 = common.make_pio_pin(r.pins.pin17);
+    let mut pin18 = common.make_pio_pin(r.pins.pin18);
+    let mut pin19 = common.make_pio_pin(r.pins.pin19);
+    let mut pin20 = common.make_pio_pin(r.pins.pin20);
+    let mut pin21 = common.make_pio_pin(r.pins.pin21);
+    let mut pin22 = common.make_pio_pin(r.pins.pin22);
 
+    let mut pin26 = common.make_pio_pin(r.pins.pin26);
+
+    setup_pins(&mut [
+        &mut pin0, &mut pin1, &mut pin2, &mut pin3, &mut pin4, &mut pin5, &mut pin6, &mut pin7, &mut pin8, &mut pin9, &mut pin10, &mut pin11, &mut pin12,
+        &mut pin13, &mut pin14, &mut pin15, &mut pin16, &mut pin17, &mut pin18, &mut pin19, &mut pin20, &mut pin21, &mut pin22, &mut pin26,  
+    ]);
+
+    let mut read_config = create_read_pio_config(&mut common);
+    read_sm.set_pin_dirs(
+        Direction::In,
+        &[
+            &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11, &pin12,
+            &pin13, &pin14, &pin26, 
+        ],
+    );
+    read_config.set_in_pins(&[
+        &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11,
+        &pin12, &pin13, &pin14, 
+    ]);
+
+    read_sm.set_config(&read_config);
+
+    let mut write_config = create_write_pio_config(&mut common);
+    write_sm.set_pin_dirs(
+        Direction::Out,
+        &[
+            &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
+        ],
+    );
+    write_sm.set_pin_dirs(
+        Direction::In,
+        &[
+            &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11, &pin12,
+            &pin13, &pin14, &pin26, 
+        ],
+    );
+    write_config.set_in_pins(&[
+        &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11,
+        &pin12, &pin13, &pin14, 
+    ]);
+    write_config.set_out_pins(&[
+        &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
+    ]);
+
+    write_sm.set_config(&write_config);
+
+    Timer::after_secs(2).await;
+    
+    defmt::info!("Startup");
+
+    spawner.spawn(led_test(r.pio3)).unwrap();
+    // spawner.spawn(eeprom_run(r.pio, sm)).unwrap();
+
+    spawn_core1(
+        p.CORE1,
+        unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) },
+        move || {
+            let executor1 = EXECUTOR1.init(Executor::new());
+            executor1.run(|spawner| unwrap!(spawner.spawn(eeprom_run(r.pio, read_sm, write_sm))));
+        },
+    );
+
+}
+
+#[embassy_executor::task]
+async fn eeprom_run(_res: PioResources, mut read_sm: StateMachine<'static, PIO0, 0>, mut write_sm: StateMachine<'static, PIO0, 1>) {
+
+    read_sm.set_enable(true);
+    write_sm.set_enable(true);
+
+    defmt::info!("EEPROM core startup");
+
+    eeprom_loop(read_sm, write_sm);
+}
+
+fn eeprom_loop(mut read_sm: StateMachine<'static, PIO0, 0>, mut write_sm: StateMachine<'static, PIO0, 1>) -> ! {
+    let mut din: u32;
+    let mut dout: u32;
+
+    //test
+    loop {
+        if read_sm.rx().empty() {
+            continue;
+        }
+        din = read_sm.rx().pull();
+        if din < 0x00010000 {
+            dout = din & 0x000000FF; //u32::from_be_bytes([0,255,(din & 0x000000FF) as u8,0]);
+            write_sm.tx().push(dout);
+        }
+    }
+}
+
+#[embassy_executor::task]
+async fn led_test(res: PioResources3) {    
+    let mut out = Output::new(res.pin25, Level::Low);
+    loop {
+        out.set_high();
+        Timer::after_secs(1).await;
+        out.set_low();
+        Timer::after_secs(1).await;
+    };
+}
+
+
+fn create_read_pio_config<'a, PIO: embassy_rp::pio::Instance>(common: &mut Common<'a, PIO>) -> PioConfig<'a, PIO> {
     let prg = pio_proc::pio_asm!(
         r#"
             loop:
                 in null, 17         ; Read 17 null bits
                 wait 1 gpio 26       ; Wait for OE to be negated
                 in pins, 15         ; Read address
-                out pins, 32         ; Write data
                 wait 0 gpio 26
                 jmp loop
         "#
@@ -166,77 +269,48 @@ async fn main(spawner: Spawner) {
         direction: ShiftDirection::Right,
     };
     config.out_sticky = false;
-    sm.set_pin_dirs(
-        Direction::Out,
-        &[
-            &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
-        ],
+    config.fifo_join = FifoJoin::RxOnly;
+
+    config
+}
+
+fn create_write_pio_config<'a, PIO: embassy_rp::pio::Instance>(common: &mut Common<'a, PIO>) -> PioConfig<'a, PIO> {
+    let prg = pio_proc::pio_asm!(
+        r#"
+            loop:
+                wait 1 gpio 26       ; Wait for OE to be negated
+                ;mov osr, pins
+                ;out null, 
+                ;out pindirs, 8
+                out pins, 32
+                wait 0 gpio 26
+                ;out pindirs, 16
+                jmp loop
+        "#
     );
-    sm.set_pin_dirs(
-        Direction::In,
-        &[
-            &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11, &pin12,
-            &pin13, &pin14, &pin26, 
-        ],
-    );
-    config.set_in_pins(&[
-        &pin0, &pin1, &pin2, &pin3, &pin4, &pin5, &pin6, &pin7, &pin8, &pin9, &pin10, &pin11,
-        &pin12, &pin13, &pin14, 
-    ]);
-    config.set_out_pins(&[
-        &pin15, &pin16, &pin17, &pin18, &pin19, &pin20, &pin21, &pin22,
-    ]);
+
+    let mut config = PioConfig::default();
+    config.use_program(&common.load_program(&prg.program), &[]);
+    config.clock_divider = (1).to_fixed();
+    config.shift_in = ShiftConfig {
+        auto_fill: true,
+        threshold: 32,
+        direction: ShiftDirection::Left,
+    };
+    config.shift_out = ShiftConfig {
+        auto_fill: true,
+        threshold: 32,
+        direction: ShiftDirection::Right,
+    };
+    config.out_sticky = false;
     config.fifo_join = FifoJoin::Duplex;
 
-    sm.set_config(&config);
-
-    Timer::after_secs(2).await;
-    
-    defmt::info!("Startup");
-
-    spawner.spawn(led_test(r.pio3)).unwrap();
-    // spawner.spawn(eeprom(r.pio, sm)).unwrap();
-
-    spawn_core1(
-        p.CORE1,
-        unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) },
-        move || {
-            let executor1 = EXECUTOR1.init(Executor::new());
-            executor1.run(|spawner| unwrap!(spawner.spawn(eeprom(r.pio, sm))));
-        },
-    );
-
+    config
 }
 
-#[embassy_executor::task]
-async fn eeprom(_res: PioResources, mut sm: StateMachine<'static, PIO0, 0>) {
-
-    sm.set_enable(true);
-
-    defmt::info!("EEPROM core startup");
-
-    let mut din: u32;
-    let mut dout: u32;
-
-    loop {
-        if sm.rx().empty() {
-            continue;
-        }
-        din = sm.rx().pull();
-        if din < 0x00010000 {
-            dout = din & 0x000000FF;
-            sm.tx().push(dout);
-        }
-    }
-}
-
-#[embassy_executor::task]
-async fn led_test(res: PioResources3) {    
-    let mut out = Output::new(res.pin25, Level::Low);
-    loop {
-        out.set_high();
-        Timer::after_secs(1).await;
-        out.set_low();
-        Timer::after_secs(1).await;
-    };
+fn setup_pins<'d, PIO: embassy_rp::pio::Instance>(pins: &mut [&mut Pin<'d, PIO>]) {
+    pins.iter_mut().for_each(|pin| {
+        pin.set_drive_strength(Drive::_8mA);
+        pin.set_slew_rate(SlewRate::Slow);
+    });
 }

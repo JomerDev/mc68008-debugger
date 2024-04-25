@@ -180,7 +180,7 @@ async fn main(spawner: Spawner) {
 
     let mut config2 = PioConfig::default();
     config2.use_program(&common.load_program(&prg2.program), &[&pin26]);
-    config2.clock_divider = (U56F8!(125_000_000) / (1*2*1_000_000)).to_fixed();
+    config2.clock_divider = (U56F8!(125_000_000) / (4*2*1_000_000)).to_fixed();
     config2.shift_in = ShiftConfig {
         auto_fill: false,
         threshold: 32,
@@ -239,15 +239,17 @@ async fn eeprom_test(mut res: PioResources2,  mut sm: StateMachine<'static, PIO0
 
     let mut din: u32 = 99;
     let mut wrong: u32 = 0;
+    let mut last_wrong: u32 = 0;
     let dma_fut = async {
-        for i in 0u32..65_536 {
+        for i in 0u32..65_537 {
             let t = rand.next_u32() & 0x0000FFFF;
             Timer::after_nanos(125*4).await;
             sm.tx().wait_push(u32::from_le(t)).await;
             din = u32::from_be(sm.rx().wait_pull().await);
             if din != (t & 0x000000FF) {
                 wrong += 1;
-                defmt::info!("{} {} {}", i, din, t & 0x000000FF);
+                defmt::info!("{} {} {} {}", i, din, t & 0x000000FF, i - last_wrong);
+                last_wrong = i;
             }
         }
         sm.set_enable(false);
