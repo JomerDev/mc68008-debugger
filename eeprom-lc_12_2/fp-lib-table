@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "M27C1001-10B1")(type "KiCad")(uri "C:/Users/JoniG/repos/mc68008-debugger/KiCad-Parts/M27C1001-10B1.pretty")(options "")(descr ""))
+)

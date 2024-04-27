@@ -227,6 +227,7 @@ fn eeprom_loop(mut read_sm: StateMachine<'static, PIO0, 0>, mut write_sm: StateM
         if din < 0x00010000 {
             dout = din & 0x000000FF; //u32::from_be_bytes([0,255,(din & 0x000000FF) as u8,0]);
             write_sm.tx().push(dout);
+            // defmt::info!("Value: {}", dout);
         }
     }
 }
@@ -310,7 +311,7 @@ fn create_write_pio_config<'a, PIO: embassy_rp::pio::Instance>(common: &mut Comm
 
 fn setup_pins<'d, PIO: embassy_rp::pio::Instance>(pins: &mut [&mut Pin<'d, PIO>]) {
     pins.iter_mut().for_each(|pin| {
-        pin.set_drive_strength(Drive::_8mA);
+        pin.set_drive_strength(Drive::_4mA);
         pin.set_slew_rate(SlewRate::Slow);
     });
 }

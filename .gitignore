@@ -17,3 +17,5 @@ Cargo.lock
 # Added by cargo
 
 /target
+eeprom-lc_12_2/eeprom-lc_12_2-backups/*
+xiao-rp2040-probe/xiao-rp2040-probe-backups/*
