@@ -24,7 +24,11 @@ use embassy_time::{Duration, Timer};
 
 use fixed::traits::ToFixed;
 use fixed_macro::types::U56F8;
+use led_settings::Ws2812;
+use smart_leds::{White, RGBW};
 use {defmt_rtt as _, panic_probe as _};
+
+mod led_settings;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandlerPio<PIO0>;
@@ -37,6 +41,51 @@ assign_resources! {
         led_pin_green: PIN_16,
         led_pin_blue: PIN_25,
         pio: PIO0,
+        dma: DMA_CH0,
+    }
+}
+
+// pub struct Brightness<I> {
+//     iter: I,
+//     brightness: u8,
+// }
+
+// impl<I> Iterator for Brightness<I>
+// where
+//     I: Iterator<Item = RGBW<u8>>,
+// {
+//     type Item = RGBW<u8>;
+
+//     fn next(&mut self) -> Option<RGBW<u8>> {
+//         self.iter.next().map(|a| RGBW {
+//             r: (a.r as u16 * (self.brightness as u16 + 1) / 256) as u8,
+//             g: (a.g as u16 * (self.brightness as u16 + 1) / 256) as u8,
+//             b: (a.b as u16 * (self.brightness as u16 + 1) / 256) as u8,
+//             a: White((a.a.0 as u16 * (self.brightness as u16 + 1) / 256) as u8),
+//         })
+//     }
+// }
+
+// /// Pass your iterator into this function to get reduced brightness
+// pub fn brightness<I>(iter: I, brightness: u8) -> Brightness<I>
+// where
+//     I: Iterator<Item = RGBW<u8>>,
+// {
+//     Brightness { iter, brightness }
+// }
+
+pub trait Brightness {
+    fn brightness(&self, brigtness: u8) -> Self;
+}
+
+impl Brightness for RGBW<u8> {
+    fn brightness(&self, brightness: u8) -> Self {
+        Self {
+            r: (self.r as u16 * (brightness as u16 + 1) / 256) as u8,
+            g: (self.g as u16 * (brightness as u16 + 1) / 256) as u8,
+            b: (self.b as u16 * (brightness as u16 + 1) / 256) as u8,
+            a: White((self.a.0 as u16 * (brightness as u16 + 1) / 256) as u8),
+        }
     }
 }
 
@@ -44,8 +93,33 @@ assign_resources! {
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     let r = split_resources!(p);
-    let speed: u64 = 4;
-    spawner.spawn(pio_task(r.pio, speed)).unwrap();
+    // let speed: u64 = 4;
+    // spawner.spawn(pio_task(r.pio, speed)).unwrap();
+    spawner.spawn(ws2812_task(r.pio)).unwrap();
+}
+
+#[embassy_executor::task]
+async fn ws2812_task(res: PioResources) {
+    let pio = res.pio;
+    let Pio {
+        mut common,
+        sm0: mut sm,
+        // mut sm1,
+        ..
+    } = Pio::new(pio, Irqs);
+    let mut ws: Ws2812<PIO0, 0, 1> = Ws2812::new(&mut common, sm, res.dma, res.clock_pin);
+
+    loop {
+        ws.write(&[RGBW{r: 255, g: 0, b: 0, a: White(0)}.brightness(32)]).await;
+        Timer::after_secs(5).await;
+        ws.write(&[RGBW{r: 0, g: 255, b: 0, a: White(0)}.brightness(32)]).await;
+        Timer::after_secs(5).await;
+        ws.write(&[RGBW{r: 0, g: 0, b: 255, a: White(0)}.brightness(32)]).await;
+        Timer::after_secs(5).await;
+        ws.write(&[RGBW{r: 0, g: 0, b: 0, a: White(255)}.brightness(32)]).await;
+        Timer::after_secs(5).await;
+    }
+
 }
 
 #[embassy_executor::task]

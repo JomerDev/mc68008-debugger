@@ -35,6 +35,7 @@ fixed-macro = "1.2.0"
 fixed = "1.27.0"
 assign-resources = "0.4.1"
 embassy-usb = "0.1.0"
+smart-leds = "0.4.0"
 ## network support
 # embassy-net = { version = "0.4.0", features = ["defmt", "tcp", "udp", "dhcpv4", "medium-ethernet"] }
 # wiznet ethernet driver support
