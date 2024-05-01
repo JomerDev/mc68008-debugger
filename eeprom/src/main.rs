@@ -278,17 +278,29 @@ fn create_read_pio_config<'a, PIO: embassy_rp::pio::Instance>(common: &mut Commo
 fn create_write_pio_config<'a, PIO: embassy_rp::pio::Instance>(common: &mut Common<'a, PIO>) -> PioConfig<'a, PIO> {
     let prg = pio_proc::pio_asm!(
         r#"
-            loop:
+            set y, 0b00111
+
+            loop:    
                 wait 1 gpio 26       ; Wait for OE to be negated
-                ;mov osr, pins
-                ;out null, 
-                ;out pindirs, 8
+                mov osr, pins
+                out  null, 14
+                jmp x!=y, output
+                jmp no_output
+            output:
+                mov osr, ~null
+                out pindirs, 8
                 out pins, 32
                 wait 0 gpio 26
-                ;out pindirs, 16
+                mov osr, null
+                out pindirs, 8
+                jmp loop
+            no_output:
+                wait 0 gpio 26
                 jmp loop
         "#
     );
+
+    // TODO: Move output enable/disable into separate state machine
 
     let mut config = PioConfig::default();
     config.use_program(&common.load_program(&prg.program), &[]);
