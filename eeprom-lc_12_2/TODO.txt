@@ -1,0 +1,1 @@
+Vor jedem Breakoutboard 5V Input pin ein 100nF Capacitor hägen um störungen auszugleichen
