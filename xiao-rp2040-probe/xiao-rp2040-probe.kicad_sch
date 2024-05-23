@@ -1389,7 +1389,7 @@
 		)
 		(uuid "03c2f20e-3073-48c1-914b-00265615876a")
 	)
-	(label "3v3"
+	(label "GND"
 		(at 82.55 88.9 0)
 		(fields_autoplaced yes)
 		(effects
@@ -1400,7 +1400,7 @@
 		)
 		(uuid "11f7ce15-cd8f-44c9-9471-1114f80f9dc1")
 	)
-	(label "3v3"
+	(label "GND"
 		(at 82.55 73.66 0)
 		(fields_autoplaced yes)
 		(effects
@@ -1411,7 +1411,7 @@
 		)
 		(uuid "16754b47-7358-4a88-9f06-94491ec9faf3")
 	)
-	(label "Ground"
+	(label "GND"
 		(at 139.7 102.87 0)
 		(fields_autoplaced yes)
 		(effects
@@ -1422,7 +1422,7 @@
 		)
 		(uuid "183dc482-448b-47de-8953-3490c667bc39")
 	)
-	(label "3v3"
+	(label "GND"
 		(at 82.55 83.82 0)
 		(fields_autoplaced yes)
 		(effects
@@ -1433,7 +1433,7 @@
 		)
 		(uuid "3301f85c-e572-43da-8fae-2cb51ad24771")
 	)
-	(label "3v3"
+	(label "GND"
 		(at 82.55 78.74 0)
 		(fields_autoplaced yes)
 		(effects
@@ -1446,7 +1446,7 @@
 	)
 	(symbol
 		(lib_id "Device:LED")
-		(at 92.71 78.74 180)
+		(at 92.71 78.74 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1454,7 +1454,7 @@
 		(dnp no)
 		(uuid "1b5adb10-876c-4ea8-bc88-869a0035aa50")
 		(property "Reference" "UART_TX1"
-			(at 76.708 78.232 0)
+			(at 77.216 78.74 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1462,7 +1462,7 @@
 			)
 		)
 		(property "Value" "Red"
-			(at 89.408 79.756 0)
+			(at 96.012 77.724 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1663,7 +1663,7 @@
 	)
 	(symbol
 		(lib_id "Device:LED")
-		(at 92.71 88.9 180)
+		(at 92.71 88.9 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1671,7 +1671,7 @@
 		(dnp no)
 		(uuid "40f8b395-a4d6-4416-a5d7-a55d7065644a")
 		(property "Reference" "DAP_CONNECTED1"
-			(at 73.914 88.646 0)
+			(at 74.168 88.9 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1679,7 +1679,7 @@
 			)
 		)
 		(property "Value" "Red"
-			(at 89.408 89.916 0)
+			(at 96.012 87.884 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1797,7 +1797,7 @@
 	)
 	(symbol
 		(lib_id "Device:LED")
-		(at 92.71 73.66 180)
+		(at 92.71 73.66 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1805,7 +1805,7 @@
 		(dnp no)
 		(uuid "b2d851a8-615d-4825-a4bc-fe6430d01a39")
 		(property "Reference" "DAP_TARGET_RUNNING1"
-			(at 71.374 73.406 0)
+			(at 71.12 73.66 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1813,7 +1813,7 @@
 			)
 		)
 		(property "Value" "Red"
-			(at 89.408 74.676 0)
+			(at 96.012 72.644 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1931,7 +1931,7 @@
 	)
 	(symbol
 		(lib_id "Device:LED")
-		(at 92.71 83.82 180)
+		(at 92.71 83.82 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1939,7 +1939,7 @@
 		(dnp no)
 		(uuid "c1de23d0-c8a6-4b7b-9836-d4d30a93763c")
 		(property "Reference" "UART_RT1"
-			(at 75.946 83.566 0)
+			(at 77.216 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1947,7 +1947,7 @@
 			)
 		)
 		(property "Value" "Red"
-			(at 89.408 84.836 0)
+			(at 96.012 82.804 0)
 			(effects
 				(font
 					(size 1.27 1.27)
